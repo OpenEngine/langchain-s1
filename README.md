@@ -15,4 +15,4 @@ updates its `CHANGELOG.md`. Merging that PR tags the release (`python-vX.Y.Z` / 
 creates a GitHub release, and publishes the package:
 
 - Python → PyPI via trusted publishing (configure the `pypi` environment and a PyPI trusted publisher for `release-please.yml`).
-- TypeScript → npm using the `NPM_TOKEN` repository secret.
+- TypeScript → npm via trusted publishing (configure an npm trusted publisher for `release-please.yml`).
