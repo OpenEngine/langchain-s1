@@ -1,0 +1,23 @@
+{
+  "name": "langchain-s1",
+  "version": "0.0.0",
+  "description": "A langchain wrapper for s1 decisions",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenEngine/langchain-s1.git",
+    "directory": "typescript"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
