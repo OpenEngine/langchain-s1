@@ -138,7 +138,7 @@ client = S1Client(
 | `timeout` | `30.0` | Per-attempt timeout (seconds or `httpx.Timeout`). |
 | `max_retries` | `2` | Retries for connection errors, timeouts, 408/429/5xx. |
 | `retry_backoff` | `0.5` | Base exponential backoff in seconds (`Retry-After` is honored). |
-| `transport` / `async_transport` | `None` | Injected `httpx` transports for custom integrations or tests. |
+| `transport` / `async_transport` | `None` | Injected `httpx` transports for custom integrations or tests. A sync-only `transport` needs an `async_transport` for async calls. |
 
 For tests and examples, `langchain_s1.testing.MockSystemOne` is an in-process,
 contract-compatible endpoint:
@@ -156,7 +156,7 @@ client = S1Client("any-model", transport=MockSystemOne())
 | `S1ConfigurationError` | Invalid client, question, decision, or gate configuration. |
 | `S1UnsupportedFeatureError` | Unsupported question/answer types or fields (e.g. `box`, `assets`). |
 | `S1TimeoutError` / `S1RequestError` | Request timed out or failed after all retries. |
-| `S1APIError` | Non-success HTTP status (`status_code`, `body` with validation `detail`). |
+| `S1APIError` | Non-success HTTP status (`status_code`, `body` with validation `detail`, truncated; kept out of the message). |
 | `S1ResponseError` | Response does not match the contract. |
 | `S1UncertainDecisionError` | Gate policy was uncertain and `on_uncertain="raise"`. |
 

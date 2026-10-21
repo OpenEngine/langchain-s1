@@ -7,7 +7,9 @@ import json
 import random
 import threading
 import time
+import weakref
 from typing import Any, Dict, Mapping, Optional, Union
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -24,7 +26,21 @@ DEFAULT_BASE_URL = "https://api.typesafe.ai/v1"
 SYSTEM_ONE_PATH = "/systemone"
 RETRYABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
+MAX_ERROR_BODY_CHARS = 2048
+
 State = Union[str, Mapping[str, Any], list]
+
+
+def redact_url(url: str) -> str:
+    """Drop userinfo, query string, and fragment so URLs are safe to log."""
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        if parts.port is not None:
+            host = f"{host}:{parts.port}"
+    except ValueError:
+        return "<invalid url>"
+    return urlunsplit((parts.scheme, host, parts.path, "", ""))
 
 
 class S1Client:
@@ -41,7 +57,8 @@ class S1Client:
             and retryable statuses (408, 429, 500, 502, 503, 504). ``0`` disables retries.
         retry_backoff: Base delay in seconds for exponential backoff between retries.
         transport: Optional ``httpx`` transport for custom integrations or testing.
-            ``httpx.MockTransport`` serves both sync and async requests.
+            ``httpx.MockTransport`` serves both sync and async requests. A sync-only
+            transport requires ``async_transport`` for async calls.
         async_transport: Optional async transport, if different from ``transport``.
     """
 
@@ -73,6 +90,7 @@ class S1Client:
             raise S1ConfigurationError("either base_url or endpoint_url must be set")
         self.model = model
         self.endpoint_url = url
+        self._safe_url = redact_url(url)
         self.timeout = timeout if isinstance(timeout, httpx.Timeout) else httpx.Timeout(timeout)
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
@@ -83,11 +101,13 @@ class S1Client:
             async_transport = transport
         self._async_transport = async_transport
         self._sync_client: Optional[httpx.Client] = None
+        # AsyncClients are bound to the event loop that created them.
+        self._async_clients: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
         self._lock = threading.Lock()
 
     def __repr__(self) -> str:
         # Never include credentials or header values.
-        return f"S1Client(model={self.model!r}, endpoint_url={self.endpoint_url!r})"
+        return f"S1Client(model={self.model!r}, endpoint_url={self._safe_url!r})"
 
     # -- request building -------------------------------------------------
 
@@ -128,14 +148,19 @@ class S1Client:
         self, response: httpx.Response, questions: Mapping[str, Question], attempts: int
     ) -> S1Result:
         if response.status_code >= 400:
-            try:
-                body: Any = response.json()
-            except ValueError:
-                body = response.text
-            detail = body.get("detail", body) if isinstance(body, dict) else body
+            # The body stays off the message (which reaches tracing) and is truncated.
+            text = response.text
+            body: Any
+            if len(text) > MAX_ERROR_BODY_CHARS:
+                body = text[:MAX_ERROR_BODY_CHARS] + "...[truncated]"
+            else:
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = text
             raise S1APIError(
-                f"System One endpoint {self.endpoint_url} returned HTTP "
-                f"{response.status_code}: {detail}",
+                f"System One endpoint {self._safe_url} returned HTTP "
+                f"{response.status_code}; see .body for the response detail",
                 status_code=response.status_code,
                 body=body,
                 attempts=attempts,
@@ -150,9 +175,27 @@ class S1Client:
         cls = S1TimeoutError if isinstance(error, httpx.TimeoutException) else S1RequestError
         what = "timed out" if cls is S1TimeoutError else f"failed ({type(error).__name__}: {error})"
         return cls(
-            f"System One request to {self.endpoint_url} {what} after {attempts} attempt(s)",
+            f"System One request to {self._safe_url} {what} after {attempts} attempt(s)",
             attempts=attempts,
         )
+
+    def _settle(
+        self,
+        attempt: int,
+        questions: Mapping[str, Question],
+        response: Optional[httpx.Response],
+        error: Optional[httpx.TransportError],
+    ) -> Union[S1Result, float]:
+        """Return the final result, raise the final error, or return the retry delay."""
+        last = attempt == self.max_retries
+        if error is not None:
+            if last:
+                raise self._failure(error, attempt + 1) from error
+        elif response is not None and (
+            response.status_code not in RETRYABLE_STATUS_CODES or last
+        ):
+            return self._handle(response, questions, attempt + 1)
+        return self._delay(attempt, response)
 
     # -- sync -------------------------------------------------------------
 
@@ -171,21 +214,31 @@ class S1Client:
         client = self._client()
         for attempt in range(self.max_retries + 1):
             response: Optional[httpx.Response] = None
+            error: Optional[httpx.TransportError] = None
             try:
                 response = client.post(self.endpoint_url, json=body, headers=self._headers())
             except httpx.TransportError as e:
-                if attempt == self.max_retries:
-                    raise self._failure(e, attempt + 1) from e
-            else:
-                if (
-                    response.status_code not in RETRYABLE_STATUS_CODES
-                    or attempt == self.max_retries
-                ):
-                    return self._handle(response, typed, attempt + 1)
-            time.sleep(self._delay(attempt, response))
+                error = e
+            outcome = self._settle(attempt, typed, response, error)
+            if isinstance(outcome, S1Result):
+                return outcome
+            time.sleep(outcome)
         raise AssertionError("unreachable")  # pragma: no cover
 
     # -- async ------------------------------------------------------------
+
+    def _aclient(self) -> httpx.AsyncClient:
+        if self._transport is not None and self._async_transport is None:
+            raise S1ConfigurationError(
+                "transport does not support async requests; pass async_transport "
+                "(e.g. an httpx.AsyncBaseTransport) to use adecide/ainvoke/abatch"
+            )
+        loop = asyncio.get_running_loop()
+        client = self._async_clients.get(loop)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(timeout=self.timeout, transport=self._async_transport)
+            self._async_clients[loop] = client
+        return client
 
     async def adecide(
         self, state: State, questions: Mapping[str, Union[Question, Mapping[str, Any]]]
@@ -193,26 +246,25 @@ class S1Client:
         """Async variant of :meth:`decide`. Cancellation propagates immediately."""
         typed = coerce_questions(questions)
         body = self.build_request_body(state, typed)
-        async with httpx.AsyncClient(
-            timeout=self.timeout, transport=self._async_transport
-        ) as client:
-            for attempt in range(self.max_retries + 1):
-                response: Optional[httpx.Response] = None
-                try:
-                    response = await client.post(
-                        self.endpoint_url, json=body, headers=self._headers()
-                    )
-                except httpx.TransportError as e:
-                    if attempt == self.max_retries:
-                        raise self._failure(e, attempt + 1) from e
-                else:
-                    if (
-                        response.status_code not in RETRYABLE_STATUS_CODES
-                        or attempt == self.max_retries
-                    ):
-                        return self._handle(response, typed, attempt + 1)
-                await asyncio.sleep(self._delay(attempt, response))
+        client = self._aclient()
+        for attempt in range(self.max_retries + 1):
+            response: Optional[httpx.Response] = None
+            error: Optional[httpx.TransportError] = None
+            try:
+                response = await client.post(self.endpoint_url, json=body, headers=self._headers())
+            except httpx.TransportError as e:
+                error = e
+            outcome = self._settle(attempt, typed, response, error)
+            if isinstance(outcome, S1Result):
+                return outcome
+            await asyncio.sleep(outcome)
         raise AssertionError("unreachable")  # pragma: no cover
+
+    async def aclose(self) -> None:
+        """Close the async client for the running event loop."""
+        client = self._async_clients.pop(asyncio.get_running_loop(), None)
+        if client is not None:
+            await client.aclose()
 
     def close(self) -> None:
         with self._lock:
@@ -225,3 +277,9 @@ class S1Client:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
+
+    async def __aenter__(self) -> "S1Client":
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.aclose()

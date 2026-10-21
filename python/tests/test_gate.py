@@ -294,3 +294,26 @@ def test_langgraph_gated_node_and_conditional_routing():
     assert graph.invoke({"text": "a long conversation"}) == {"text": "a long conversation", "summary": "S"}
     assert graph.invoke({"text": "hi"}) == {"text": "hi"}
     assert c.calls == 1
+
+
+def test_error_trace_omits_url_credentials_and_response_body():
+    def handler(request):
+        return httpx.Response(400, json={"detail": "echo: secret-state-xyz"})
+
+    handler_cb, c = RecordingHandler(), Counter()
+    gate = s1_gate(
+        RunnableLambda(c.node, name="summarize"),
+        decision_for(
+            httpx.MockTransport(handler),
+            endpoint_url="https://u:url-pass@gw.example/s1?token=url-token",
+        ),
+        policy=POLICY,
+        skip_output=skip_empty,
+        on_error="skip",
+    )
+    gate.invoke({"text": "x"}, {"callbacks": [handler_cb]})
+    (event,) = handler_cb.events
+    trace = repr(event)
+    assert event["data"]["reason"] == "inference_error" and c.calls == 0
+    for secret in ("url-pass", "url-token", "secret-state-xyz", "sk-secret-key"):
+        assert secret not in trace

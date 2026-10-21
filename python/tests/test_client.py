@@ -242,9 +242,10 @@ def test_unsupported_features():
 def test_validation_error_detail_is_surfaced():
     detail = [{"loc": ["body", "model"], "msg": "unknown model", "type": "value_error"}]
     t = raw_transport(lambda req, n: httpx.Response(422, json={"detail": detail}))
-    with pytest.raises(S1APIError, match="HTTP 422.*unknown model") as e:
+    with pytest.raises(S1APIError, match="HTTP 422") as e:
         S1Client("m", transport=t).decide("s", QUESTIONS)
     assert e.value.body == {"detail": detail}
+    assert "unknown model" not in str(e.value)  # body stays off the traced message
     assert len(t.calls) == 1  # not retried
 
 
@@ -334,3 +335,62 @@ def test_state_serialized_as_json():
     mock = MockSystemOne()
     S1Client("m", transport=mock).decide(["a", {"b": 1}], {"q": NoulQuestion("?")})
     assert json.loads(mock.requests[0].content)["state"] == ["a", {"b": 1}]
+
+
+# -- credential and payload hygiene -----------------------------------------
+
+
+def test_url_credentials_redacted_from_messages_and_repr():
+    url = "https://user:hunter2@gw.example:8443/s1?api_key=sk-leak#frag"
+    t = raw_transport(lambda req, n: httpx.Response(500, json={"detail": "x"}))
+    c = S1Client("m", endpoint_url=url, transport=t, max_retries=0)
+    assert c.endpoint_url == url
+    assert "hunter2" not in repr(c) and "sk-leak" not in repr(c)
+    with pytest.raises(S1APIError) as e:
+        c.decide("s", QUESTIONS)
+    assert "hunter2" not in str(e.value) and "sk-leak" not in str(e.value)
+    assert "https://gw.example:8443/s1" in str(e.value)
+
+    t = flaky(10, httpx.ConnectError("refused"))
+    c = S1Client("m", endpoint_url=url, transport=t, max_retries=0)
+    with pytest.raises(S1RequestError) as e:
+        c.decide("s", QUESTIONS)
+    assert "hunter2" not in str(e.value) and "sk-leak" not in str(e.value)
+
+
+def test_large_error_body_truncated():
+    t = raw_transport(lambda req, n: httpx.Response(400, text="E" * 100_000))
+    with pytest.raises(S1APIError) as e:
+        S1Client("m", transport=t).decide("s", QUESTIONS)
+    assert len(e.value.body) < 3000 and e.value.body.endswith("[truncated]")
+    assert "EEEE" not in str(e.value)
+
+
+# -- async transport and connection reuse -----------------------------------
+
+
+class SyncOnly(httpx.BaseTransport):
+    def handle_request(self, request):
+        return httpx.Response(200, json=ok_body({"q": {"type": "noul", "noul": 0.5}}))
+
+
+def test_sync_only_transport_refuses_async():
+    c = S1Client("m", transport=SyncOnly())
+    assert c.decide("s", {"q": NoulQuestion("?")})["q"].noul == 0.5
+    with pytest.raises(S1ConfigurationError, match="async_transport"):
+        asyncio.run(c.adecide("s", {"q": NoulQuestion("?")}))
+
+
+def test_async_client_reused_within_loop():
+    t = respond({"q": {"type": "noul", "noul": 0.5}})
+
+    async def main():
+        async with S1Client("m", transport=t) as c:
+            await asyncio.gather(*(c.adecide("s", {"q": NoulQuestion("?")}) for _ in range(5)))
+            first = c._aclient()
+            await c.adecide("s", {"q": NoulQuestion("?")})
+            assert c._aclient() is first
+        assert first.is_closed
+
+    asyncio.run(main())
+    asyncio.run(main())  # a new loop gets a fresh client
