@@ -49,7 +49,13 @@ def _jsonable(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class NoulQuestion:
-    """A yes/no question. The answer is the probability of *yes*."""
+    """A yes/no question. The answer is the probability of *yes*.
+
+    Attributes:
+        instructions: What to ask. A non-empty string, an object, or an array.
+        criteria: Optional ``{"true": ..., "false": ...}`` descriptions of the two
+            outcomes.
+    """
 
     instructions: Instructions
     criteria: Optional[Mapping[str, str]] = None
@@ -65,6 +71,7 @@ class NoulQuestion:
                 )
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the question in System One wire format."""
         data: Dict[str, Any] = {"type": "noul", "instructions": _jsonable(self.instructions)}
         if self.criteria is not None:
             data["criteria"] = dict(self.criteria)
@@ -73,7 +80,12 @@ class NoulQuestion:
 
 @dataclass(frozen=True)
 class ChoiceQuestion:
-    """Select one option. ``criteria`` maps choice names to descriptions (1-255 choices)."""
+    """Select one option. ``criteria`` maps choice names to descriptions (1-255 choices).
+
+    Attributes:
+        instructions: What to ask. A non-empty string, an object, or an array.
+        criteria: Choice name -> description. 1-255 entries.
+    """
 
     instructions: Instructions
     criteria: Mapping[str, str]
@@ -85,6 +97,7 @@ class ChoiceQuestion:
             raise S1ConfigurationError("choice criteria must be a mapping with 1-255 choices")
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the question in System One wire format."""
         return {
             "type": "choice",
             "instructions": _jsonable(self.instructions),
@@ -94,7 +107,12 @@ class ChoiceQuestion:
 
 @dataclass(frozen=True)
 class ScoreQuestion:
-    """Rate on a scale. ``criteria`` lists level descriptions from level 0 upward (1-10 levels)."""
+    """Rate on a scale. ``criteria`` lists level descriptions from level 0 upward (1-10 levels).
+
+    Attributes:
+        instructions: What to ask. A non-empty string, an object, or an array.
+        criteria: Level descriptions; the list index is the level number. 1-10 entries.
+    """
 
     instructions: Instructions
     criteria: Sequence[str]
@@ -106,6 +124,7 @@ class ScoreQuestion:
             raise S1ConfigurationError("score criteria must be a list of 1-10 level descriptions")
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the question in System One wire format."""
         return {
             "type": "score",
             "instructions": _jsonable(self.instructions),
@@ -117,7 +136,20 @@ Question = Union[NoulQuestion, ChoiceQuestion, ScoreQuestion]
 
 
 def coerce_question(name: str, question: Union[Question, Mapping[str, Any]]) -> Question:
-    """Convert a question object or contract-shaped dict into a typed question."""
+    """Convert a question object or contract-shaped dict into a typed question.
+
+    Args:
+        name: The question's name, used in error messages.
+        question: A typed question, or a mapping shaped like the wire format
+            (``{"type", "instructions", "criteria"}``).
+
+    Returns:
+        The equivalent typed question.
+
+    Raises:
+        S1ConfigurationError: If the mapping is malformed.
+        S1UnsupportedFeatureError: If the type or extra fields are unsupported.
+    """
     if isinstance(question, (NoulQuestion, ChoiceQuestion, ScoreQuestion)):
         return question
     if not isinstance(question, Mapping):
@@ -150,6 +182,19 @@ def coerce_question(name: str, question: Union[Question, Mapping[str, Any]]) -> 
 def coerce_questions(
     questions: Mapping[str, Union[Question, Mapping[str, Any]]],
 ) -> Dict[str, Question]:
+    """Validate and coerce a mapping of named questions.
+
+    Args:
+        questions: Non-empty mapping of question name -> question object or
+            contract-shaped dict.
+
+    Returns:
+        The same questions as typed question objects, keyed by name.
+
+    Raises:
+        S1ConfigurationError: If the mapping is empty or a name/question is malformed.
+        S1UnsupportedFeatureError: If a question uses an unsupported type or field.
+    """
     if not isinstance(questions, Mapping) or not questions:
         raise S1ConfigurationError("questions must be a non-empty mapping of name -> question")
     out: Dict[str, Question] = {}
@@ -167,23 +212,37 @@ def coerce_questions(
 
 @dataclass(frozen=True)
 class NoulAnswer:
-    """``noul`` is the probability that the answer is *yes* (0-1). It is not a confidence."""
+    """``noul`` is the probability that the answer is *yes* (0-1). It is not a confidence.
+
+    Attributes:
+        noul: Probability of *yes*, within [0, 1].
+    """
 
     noul: float
     type: str = field(default="noul", init=False)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the answer in System One wire format."""
         return {"type": "noul", "noul": self.noul}
 
 
 @dataclass(frozen=True)
 class ChoiceAnswer:
+    """A ``choice`` answer: the selected option plus per-option probabilities.
+
+    Attributes:
+        choice: The chosen option (a key of the question's criteria).
+        confidence: The endpoint's confidence in the choice, within [0, 1].
+        probabilities: Per-option probabilities, keyed by choice name.
+    """
+
     choice: str
     confidence: float
     probabilities: Dict[str, float]
     type: str = field(default="choice", init=False)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the answer in System One wire format."""
         return {
             "type": "choice",
             "choice": self.choice,
@@ -194,7 +253,14 @@ class ChoiceAnswer:
 
 @dataclass(frozen=True)
 class ScoreAnswer:
-    """``score`` is the probability-weighted average level."""
+    """``score`` is the probability-weighted average level.
+
+    Attributes:
+        score: Probability-weighted level, within [0, number of levels - 1].
+        confidence: The endpoint's confidence, within [0, 1].
+        probabilities: Per-level probabilities, keyed by the level number as a string.
+        legend: Level number -> level description, as reported by the endpoint.
+    """
 
     score: float
     confidence: float
@@ -203,6 +269,7 @@ class ScoreAnswer:
     type: str = field(default="score", init=False)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the answer in System One wire format."""
         return {
             "type": "score",
             "score": self.score,
@@ -217,16 +284,30 @@ Answer = Union[NoulAnswer, ChoiceAnswer, ScoreAnswer]
 
 @dataclass(frozen=True)
 class Usage:
+    """Token usage reported by the endpoint for one request.
+
+    Attributes:
+        input_tokens: Tokens the endpoint counted for the request (state + questions).
+        output_tokens: Tokens the endpoint counted for the answers.
+    """
+
     input_tokens: int
     output_tokens: int
 
     def to_dict(self) -> Dict[str, int]:
+        """Return the usage in System One wire format."""
         return {"input_tokens": self.input_tokens, "output_tokens": self.output_tokens}
 
 
 @dataclass(frozen=True)
 class S1Result(Mapping[str, Answer]):
-    """A validated System One response. Indexing by question name returns its typed answer."""
+    """A validated System One response. Indexing by question name returns its typed answer.
+
+    Attributes:
+        model: The model that produced the answers.
+        answers: Question name -> typed answer.
+        usage: Token usage for the request.
+    """
 
     model: str
     answers: Dict[str, Answer]
@@ -247,6 +328,7 @@ class S1Result(Mapping[str, Answer]):
         return len(self.answers)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Return the result in System One wire format."""
         return {
             "model": self.model,
             "answers": {k: v.to_dict() for k, v in self.answers.items()},
@@ -347,7 +429,24 @@ def _token_count(value: Any, path: str) -> int:
 
 
 def parse_response(data: Any, questions: Mapping[str, Question]) -> S1Result:
-    """Validate a raw response body against the questions that were asked."""
+    """Validate a raw response body against the questions that were asked.
+
+    Every question must have a matching answer: the answer type must equal the
+    question type, probabilities must be within [0, 1], choices must be listed in the
+    question's criteria, and scores must be within the level range.
+
+    Args:
+        data: The decoded response body (``{"model", "answers", "usage"}``).
+        questions: The typed questions that were asked.
+
+    Returns:
+        A validated :class:`S1Result`.
+
+    Raises:
+        S1ResponseError: If the body or an answer violates the contract. The error
+            message carries the offending field path (e.g. ``answers.route.choice``).
+        S1UnsupportedFeatureError: If the endpoint returned an unsupported answer type.
+    """
     if not isinstance(data, Mapping):
         raise S1ResponseError(f"expected a JSON object response, got {type(data).__name__}")
     model = _require(data, "model", "response")

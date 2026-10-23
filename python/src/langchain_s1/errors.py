@@ -22,7 +22,12 @@ class S1InferenceError(S1Error):
 
 
 class S1RequestError(S1InferenceError):
-    """The request could not be completed (connection failure, exhausted retries)."""
+    """The request could not be completed (connection failure, exhausted retries).
+
+    Args:
+        message: Human-readable description.
+        attempts: How many attempts were made before giving up.
+    """
 
     def __init__(self, message: str, *, attempts: int = 1) -> None:
         super().__init__(message)
@@ -34,7 +39,14 @@ class S1TimeoutError(S1RequestError):
 
 
 class S1APIError(S1InferenceError):
-    """The endpoint returned a non-success HTTP status."""
+    """The endpoint returned a non-success HTTP status.
+
+    Args:
+        message: Human-readable description (never includes the response body).
+        status_code: The HTTP status code returned by the endpoint.
+        body: The response body (JSON-decoded when possible, truncated at 2048 chars).
+        attempts: How many attempts were made before giving up.
+    """
 
     def __init__(
         self,
@@ -51,7 +63,13 @@ class S1APIError(S1InferenceError):
 
 
 class S1ResponseError(S1InferenceError, ValueError):
-    """The endpoint returned a response that does not match the System One contract."""
+    """The endpoint returned a response that does not match the System One contract.
+
+    Args:
+        message: Human-readable description of the violation.
+        path: Dotted path of the offending field (e.g. ``answers.route.probabilities``),
+            prepended to the message when set.
+    """
 
     def __init__(self, message: str, *, path: Optional[str] = None) -> None:
         super().__init__(f"{path}: {message}" if path else message)
@@ -59,7 +77,12 @@ class S1ResponseError(S1InferenceError, ValueError):
 
 
 class S1UncertainDecisionError(S1Error):
-    """A gate policy returned ``uncertain`` and the gate is configured to raise."""
+    """A gate policy returned ``uncertain`` and the gate is configured to raise.
+
+    Args:
+        message: Human-readable description.
+        decision: The :class:`~langchain_s1.types.S1Result` the policy was uncertain about.
+    """
 
     def __init__(self, message: str, *, decision: Any) -> None:
         super().__init__(message)

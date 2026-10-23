@@ -18,6 +18,7 @@
     "build": "tsc"
   },
   "devDependencies": {
+    "typedoc": "^0.28.20",
     "typescript": "^5.6.0"
   }
 }

@@ -1,6 +1,14 @@
 # langchain-s1
 A langchain wrapper for s1 decisions
 
+## Documentation
+
+The docsite — usage guides, configuration reference, examples, and the auto-generated
+API reference for both packages — is published on GitHub Pages:
+<https://openengine.github.io/langchain-s1/>. It is rebuilt from source on every push
+to `main` (`.github/workflows/docsite.yml`); the Python reference comes from the
+docstrings via mkdocstrings, the TypeScript reference from TypeDoc.
+
 ## Packages
 
 - `python/` — the `langchain-s1` PyPI package

@@ -1,0 +1,76 @@
+site_name: langchain-s1
+site_description: >-
+  LangChain wrappers for System 1 decisions, in Python and TypeScript.
+site_url: https://openengine.github.io/langchain-s1/
+repo_name: OpenEngine/langchain-s1
+repo_url: https://github.com/OpenEngine/langchain-s1
+edit_uri: edit/main/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  logo: null
+  palette:
+    - scheme: slate
+      primary: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - content.code.copy
+    - search.highlight
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence.fence_mermaid_custom
+  - pymdownx.tasklist
+
+plugins:
+  - search
+  - mermaid2
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            docstring_section_style: list
+            line_length: 100
+            merge_init_into_class: true
+            show_symbol_heading_toggle: true
+
+nav:
+  - Home: index.md
+  - Python:
+      - Getting started: python/getting-started.md
+      - Standalone decisions: python/decisions.md
+      - Gated nodes: python/gates.md
+      - Graph routing: python/graphs.md
+      - Configuration: python/configuration.md
+      - Testing: python/testing.md
+      - Errors: python/errors.md
+      - API reference: python/api.md
+  - TypeScript:
+      - Guide: typescript/guide.md
+      - API reference: typescript/api.md
+  - Architecture: architecture.md

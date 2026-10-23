@@ -121,6 +121,20 @@ class S1Client:
     def build_request_body(
         self, state: State, questions: Mapping[str, Union[Question, Mapping[str, Any]]]
     ) -> Dict[str, Any]:
+        """Build the JSON body sent to the endpoint.
+
+        Args:
+            state: The state to ask about (a string, object, or array).
+            questions: Named questions (typed objects or contract-shaped dicts).
+
+        Returns:
+            The ``{"model", "state", "questions"}`` request body.
+
+        Raises:
+            S1ConfigurationError: If ``state`` is not a string, object, or array, or a
+                question is malformed.
+            S1UnsupportedFeatureError: If a question uses an unsupported type or field.
+        """
         if not isinstance(state, (str, Mapping, list, tuple)):
             raise S1ConfigurationError(
                 f"state must be a string, object, or array, got {type(state).__name__}"
@@ -208,7 +222,26 @@ class S1Client:
     def decide(
         self, state: State, questions: Mapping[str, Union[Question, Mapping[str, Any]]]
     ) -> S1Result:
-        """Ask the endpoint one or more named questions about ``state``."""
+        """Ask the endpoint one or more named questions about ``state``.
+
+        All questions are sent in a single request. Connection errors, timeouts, and
+        retryable statuses (408, 429, 5xx) are retried with exponential backoff, up to
+        ``max_retries`` retries.
+
+        Args:
+            state: The state to ask about (a string, object, or array).
+            questions: Named questions (typed objects or contract-shaped dicts).
+
+        Returns:
+            A validated :class:`~langchain_s1.types.S1Result` keyed by question name.
+
+        Raises:
+            S1ConfigurationError: If ``state`` or a question is malformed.
+            S1TimeoutError: If every attempt timed out.
+            S1RequestError: If the request failed after all attempts.
+            S1APIError: If the endpoint returned a non-success status.
+            S1ResponseError: If the response does not match the contract.
+        """
         typed = coerce_questions(questions)
         body = self.build_request_body(state, typed)
         client = self._client()
@@ -243,7 +276,12 @@ class S1Client:
     async def adecide(
         self, state: State, questions: Mapping[str, Union[Question, Mapping[str, Any]]]
     ) -> S1Result:
-        """Async variant of :meth:`decide`. Cancellation propagates immediately."""
+        """Async variant of :meth:`decide`.
+
+        Uses a per-event-loop ``httpx.AsyncClient`` that is created on first use and
+        cleaned up when the loop goes away. Cancellation propagates immediately.
+        Arguments, return value, and errors are the same as :meth:`decide`.
+        """
         typed = coerce_questions(questions)
         body = self.build_request_body(state, typed)
         client = self._aclient()
@@ -261,12 +299,13 @@ class S1Client:
         raise AssertionError("unreachable")  # pragma: no cover
 
     async def aclose(self) -> None:
-        """Close the async client for the running event loop."""
+        """Close the async client for the running event loop. No-op if none was created."""
         client = self._async_clients.pop(asyncio.get_running_loop(), None)
         if client is not None:
             await client.aclose()
 
     def close(self) -> None:
+        """Close the shared sync client, if one was created. Safe to call twice."""
         with self._lock:
             if self._sync_client is not None:
                 self._sync_client.close()
