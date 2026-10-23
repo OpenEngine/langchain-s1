@@ -14,7 +14,17 @@ AnswerFn = Callable[[Dict[str, Any]], Mapping[str, Any]]
 
 
 def default_answer(question: Mapping[str, Any]) -> Dict[str, Any]:
-    """A deterministic, contract-valid answer for a single question."""
+    """A deterministic, contract-valid answer for a single question.
+
+    ``noul`` answers 0.9; ``choice`` picks the first option at 0.9; ``score`` picks
+    the top level at 1.0.
+
+    Args:
+        question: A question in wire format (``{"type", "instructions", "criteria"}`).
+
+    Returns:
+        An answer in wire format for that question.
+    """
     qtype = question.get("type")
     if qtype == "noul":
         return {"type": "noul", "noul": 0.9}
@@ -71,6 +81,7 @@ class MockSystemOne(httpx.MockTransport):
 
     @property
     def bodies(self) -> List[Dict[str, Any]]:
+        """The parsed JSON request bodies received so far, in order."""
         return [json.loads(r.content) for r in self.requests]
 
     def _handle(self, request: httpx.Request) -> httpx.Response:

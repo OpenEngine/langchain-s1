@@ -53,6 +53,7 @@ class GateOutcome:
     error: Optional[BaseException] = None
 
     def to_trace(self) -> Dict[str, Any]:
+        """Return a JSON-safe view of the outcome, recorded in the ``s1_gate`` event."""
         return {
             "action": self.action,
             "reason": self.reason,
@@ -77,6 +78,19 @@ class S1Gate(Runnable[Any, Any]):
     The wrapped node is invoked at most once per gate invocation. Only the
     inference request is retried (by the :class:`S1Client`); the node is never
     replayed because of inference or tracing failures.
+
+    Args:
+        node: The existing runnable (or callable) to gate.
+        decision: An :class:`~langchain_s1.S1Decision` (or any runnable returning
+            ``S1Result``) consulted before each invocation.
+        policy: Maps the S1 result to ``"run"``, ``"skip"``, or ``"uncertain"``.
+        skip_output: Called as ``skip_output(input, outcome)`` when the node is
+            skipped; must match the node's output contract.
+        on_uncertain: ``"run"``, ``"skip"``, or ``"raise"`` when the policy is
+            uncertain.
+        on_error: ``"run"``, ``"skip"``, or ``"raise"`` when inference fails after
+            retries.
+        name: Optional run name for tracing.
     """
 
     def __init__(
@@ -222,7 +236,19 @@ def s1_gate(
 
 
 def noul_policy(question: str, *, run_at: float, skip_below: float) -> Policy:
-    """Run when P(yes) >= ``run_at``, skip when P(yes) < ``skip_below``, else uncertain."""
+    """Run when P(yes) >= ``run_at``, skip when P(yes) < ``skip_below``, else uncertain.
+
+    Args:
+        question: The noul question to read from the result.
+        run_at: P(yes) at or above which the node runs.
+        skip_below: P(yes) strictly below which the node is skipped.
+
+    Returns:
+        A policy callable for :func:`s1_gate`.
+
+    Raises:
+        S1ConfigurationError: If ``0 <= skip_below <= run_at <= 1`` does not hold.
+    """
     if not 0.0 <= skip_below <= run_at <= 1.0:
         raise S1ConfigurationError("noul_policy requires 0 <= skip_below <= run_at <= 1")
 
@@ -246,7 +272,20 @@ def choice_policy(
     skip: Collection[str],
     min_confidence: float = 0.0,
 ) -> Policy:
-    """Map choices to run/skip. Unlisted choices or low confidence are uncertain."""
+    """Map choices to run/skip. Unlisted choices or low confidence are uncertain.
+
+    Args:
+        question: The choice question to read from the result.
+        run: Choices that make the node run.
+        skip: Choices that make the node skip.
+        min_confidence: Minimum answer confidence; below it the policy is uncertain.
+
+    Returns:
+        A policy callable for :func:`s1_gate`.
+
+    Raises:
+        S1ConfigurationError: If a choice is listed in both ``run`` and ``skip``.
+    """
     overlap = set(run) & set(skip)
     if overlap:
         raise S1ConfigurationError(f"choice_policy: choices in both run and skip: {sorted(overlap)}")

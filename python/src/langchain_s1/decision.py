@@ -59,11 +59,22 @@ class S1Decision(Runnable[Any, S1Result]):
     def invoke(
         self, input: Any, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> S1Result:
+        """Run the decision: ``select_state(input)`` is sent to the endpoint once.
+
+        Args:
+            input: The runnable input (any type); only what ``select_state`` returns
+                is sent to the endpoint.
+            config: Runnable config (callbacks, tags, metadata, run name).
+
+        Returns:
+            The validated :class:`~langchain_s1.types.S1Result`.
+        """
         return self._call_with_config(self._decide, input, config, run_type="chain")
 
     async def ainvoke(
         self, input: Any, config: Optional[RunnableConfig] = None, **kwargs: Any
     ) -> S1Result:
+        """Async variant of :meth:`invoke`."""
         return await self._acall_with_config(self._adecide, input, config, run_type="chain")
 
     def __repr__(self) -> str:

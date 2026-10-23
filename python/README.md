@@ -8,6 +8,10 @@ around existing nodes. It speaks the
 (`{model, state, questions}` → `{model, answers, usage}`), so any endpoint implementing
 that contract works through configuration alone.
 
+Guides, examples, configuration reference, and the API reference (generated from the
+docstrings) live on the [docsite](https://openengine.github.io/langchain-s1/).
+The package layout and data flow are described in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ```bash
 pip install langchain-s1
 ```
