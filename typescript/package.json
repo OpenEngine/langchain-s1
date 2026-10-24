@@ -1,6 +1,6 @@
 {
   "name": "langchain-s1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A langchain wrapper for s1 decisions",
   "license": "MIT",
   "repository": {
