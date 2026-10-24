@@ -2,23 +2,14 @@
 
 An `S1Decision` asks named questions about a selected view of its input and returns an
 `S1Result`. All questions are sent in **one** request, so asking three things costs
-one inference.
+one inference. The complete worked example (client, all three question types, reading
+results) is in [Getting started](getting-started.md); the shape that matters on this
+page is the `select_state` bridge:
 
 ```python
-from langchain_s1 import S1Client, S1Decision, NoulQuestion, ChoiceQuestion, ScoreQuestion
-
-client = S1Client("jev-latest", api_key="...")
-
 decision = S1Decision(
     client,
-    {
-        "needs_reply": NoulQuestion("Does the last message need a reply?"),
-        "route": ChoiceQuestion(
-            "Which team should handle the last message?",
-            {"billing": "Payments, refunds, invoices", "general": "Anything else"},
-        ),
-        "urgency": ScoreQuestion("How urgent is the last message?", ["low", "medium", "high"]),
-    },
+    {"needs_reply": NoulQuestion("Does the last message need a reply?")},
     select_state=lambda state: {"last_message": state["messages"][-1]},
 )
 
@@ -80,18 +71,15 @@ ScoreQuestion("How urgent is the last message?", ["low", "medium", "high"])
 
 ## Reading results
 
-```python
-result["route"].choice            # "billing"
-result["urgency"].score           # 1.2
-result["needs_reply"].noul        # 0.92
+The result is an `S1Result`: a mapping from question name to its typed answer (the
+field-by-field tour is in [Getting started](getting-started.md#4-read-the-answers)).
+It behaves like a dict of answers, and `to_dict()` returns the raw contract shape:
 
-# S1Result is a mapping, so it behaves like a dict of answers:
+```python
 for name in result:
     print(name, result[name].to_dict())
 
-result.model                      # "jev-latest"
-result.usage.input_tokens         # 128
-result.to_dict()                  # the raw contract shape, if you need it
+result.to_dict()   # {"model", "answers", "usage"}
 ```
 
 ## Runnable behavior

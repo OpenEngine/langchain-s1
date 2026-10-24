@@ -3,15 +3,18 @@
 All errors derive from `S1Error`. The inference errors (the `S1InferenceError`
 subtree) are the ones a gate's `on_error` handles.
 
+Per-error fields (`attempts`, `status_code`, `body`, `path`, `decision`) are documented
+on the classes in the [API reference](api.md).
+
 | Error | Base | When |
 |---|---|---|
 | `S1ConfigurationError` | `S1Error`, `ValueError` | Invalid client, question, decision, or gate configuration — detected locally, before any request. |
 | `S1UnsupportedFeatureError` | `S1Error` | An unsupported question/answer type or field (e.g. `box`, image questions, `assets`). |
-| `S1RequestError` | `S1InferenceError` | Connection failure or failure after all retries. Carries `attempts`. |
+| `S1RequestError` | `S1InferenceError` | Connection failure or failure after all retries. |
 | `S1TimeoutError` | `S1RequestError` | Every attempt timed out. |
-| `S1APIError` | `S1InferenceError` | Non-success HTTP status. Carries `status_code` and `body` (JSON-decoded when possible, truncated at 2048 chars, kept **out** of the message). |
-| `S1ResponseError` | `S1InferenceError`, `ValueError` | The response does not match the contract — missing answers, mismatched types, unknown choices, out-of-range scores, probabilities outside [0, 1]. Carries `path` (the offending field, e.g. `answers.route.choice`). |
-| `S1UncertainDecisionError` | `S1Error` | A gate policy returned `uncertain` and `on_uncertain="raise"`. Carries `decision`. |
+| `S1APIError` | `S1InferenceError` | Non-success HTTP status. |
+| `S1ResponseError` | `S1InferenceError`, `ValueError` | The response does not match the contract — missing answers, mismatched types, unknown choices, out-of-range scores, probabilities outside [0, 1]. |
+| `S1UncertainDecisionError` | `S1Error` | A gate policy returned `uncertain` and `on_uncertain="raise"`. |
 
 ```
 S1Error

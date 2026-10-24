@@ -27,8 +27,8 @@ flowchart TD
 
   GATE -->|1. consults| DEC
   DEC -->|2. select_state + questions| CLI
-  CLI -->|3. POST {model, state, questions}| EP
-  EP -->|4. {model, answers, usage}| CLI
+  CLI -- "3. POST {model, state, questions}" --> EP
+  EP -- "4. {model, answers, usage}" --> CLI
   CLI -->|5. validates with| TYPES
   DEC -->|returns S1Result| GATE
   GATE -->|6. policy runs or skips the node| NODE["wrapped node<br/>(any runnable)"]

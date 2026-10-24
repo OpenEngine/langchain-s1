@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import threading
 import time
 import weakref
@@ -41,6 +42,18 @@ def redact_url(url: str) -> str:
     except ValueError:
         return "<invalid url>"
     return urlunsplit((parts.scheme, host, parts.path, "", ""))
+
+
+_URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://\S+")
+
+
+def redact_urls(text: str) -> str:
+    """Redact every URL embedded in free-form text (e.g. a transport error message).
+
+    Transport errors (including those raised by user-provided transports) may embed
+    URLs with credentials, so raw text never reaches error messages verbatim.
+    """
+    return _URL_RE.sub(lambda m: redact_url(m.group(0)), text)
 
 
 class S1Client:
@@ -135,15 +148,20 @@ class S1Client:
                 question is malformed.
             S1UnsupportedFeatureError: If a question uses an unsupported type or field.
         """
+        typed = coerce_questions(questions)
+        return self._request_body(state, typed)
+
+    def _request_body(
+        self, state: State, questions: Mapping[str, Question]
+    ) -> Dict[str, Any]:
         if not isinstance(state, (str, Mapping, list, tuple)):
             raise S1ConfigurationError(
                 f"state must be a string, object, or array, got {type(state).__name__}"
             )
-        typed = coerce_questions(questions)
         return {
             "model": self.model,
             "state": list(state) if isinstance(state, tuple) else state,
-            "questions": {name: q.to_dict() for name, q in typed.items()},
+            "questions": {name: q.to_dict() for name, q in questions.items()},
         }
 
     def _delay(self, attempt: int, response: Optional[httpx.Response]) -> float:
@@ -187,7 +205,11 @@ class S1Client:
 
     def _failure(self, error: httpx.TransportError, attempts: int) -> S1RequestError:
         cls = S1TimeoutError if isinstance(error, httpx.TimeoutException) else S1RequestError
-        what = "timed out" if cls is S1TimeoutError else f"failed ({type(error).__name__}: {error})"
+        # The exception text may embed URLs (proxy errors, custom transports); redact.
+        what = (
+            "timed out" if cls is S1TimeoutError
+            else f"failed ({type(error).__name__}: {redact_urls(str(error))})"
+        )
         return cls(
             f"System One request to {self._safe_url} {what} after {attempts} attempt(s)",
             attempts=attempts,
@@ -243,7 +265,7 @@ class S1Client:
             S1ResponseError: If the response does not match the contract.
         """
         typed = coerce_questions(questions)
-        body = self.build_request_body(state, typed)
+        body = self._request_body(state, typed)
         client = self._client()
         for attempt in range(self.max_retries + 1):
             response: Optional[httpx.Response] = None
@@ -278,12 +300,14 @@ class S1Client:
     ) -> S1Result:
         """Async variant of :meth:`decide`.
 
-        Uses a per-event-loop ``httpx.AsyncClient`` that is created on first use and
-        cleaned up when the loop goes away. Cancellation propagates immediately.
-        Arguments, return value, and errors are the same as :meth:`decide`.
+        Uses a per-event-loop ``httpx.AsyncClient``, created on first use and closed
+        by :meth:`aclose` (or the async context manager). If the loop exits first, the
+        client is garbage-collected with it; call :meth:`aclose` before the loop closes
+        to shut the connection pool down deterministically. Cancellation propagates
+        immediately. Arguments, return value, and errors are the same as :meth:`decide`.
         """
         typed = coerce_questions(questions)
-        body = self.build_request_body(state, typed)
+        body = self._request_body(state, typed)
         client = self._aclient()
         for attempt in range(self.max_retries + 1):
             response: Optional[httpx.Response] = None

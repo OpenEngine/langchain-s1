@@ -21,21 +21,14 @@ from langchain_s1 import S1Client
 
 # TypeSafe's hosted API (the default base_url is https://api.typesafe.ai/v1).
 client = S1Client("jev-latest", api_key=os.environ["TYPESAFE_API_KEY"])
-
-# A local or internal endpoint: point it anywhere.
-client = S1Client("my-local-s1", base_url="http://localhost:8000")
-
-# Or an explicit endpoint URL with custom auth headers.
-client = S1Client(
-    "my-model",
-    endpoint_url="https://gateway.example/teams/s1/decide",
-    headers={"X-Gateway-Key": os.environ["GATEWAY_KEY"]},
-)
 ```
 
+Local endpoints, explicit endpoint URLs, custom auth headers, and every other option —
+timeouts, retries, backoff, custom transports — are covered in one place, with the
+full option list: [Configuration](configuration.md#s1client-options).
+
 The client is safe to create once and reuse: the underlying `httpx` connection pool is
-created lazily and shared. See [Configuration](configuration.md) for every option —
-timeouts, retries, backoff, custom transports.
+created lazily and shared.
 
 ## 2. Define questions
 

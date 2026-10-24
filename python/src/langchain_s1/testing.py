@@ -77,12 +77,13 @@ class MockSystemOne(httpx.MockTransport):
         self.required_headers = dict(required_headers or {})
         self.model = model
         self.requests: List[httpx.Request] = []
+        self._bodies: List[Dict[str, Any]] = []
         super().__init__(self._handle)
 
     @property
     def bodies(self) -> List[Dict[str, Any]]:
         """The parsed JSON request bodies received so far, in order."""
-        return [json.loads(r.content) for r in self.requests]
+        return list(self._bodies)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -92,6 +93,7 @@ class MockSystemOne(httpx.MockTransport):
             if request.headers.get(key) != value:
                 return httpx.Response(401, json={"detail": f"missing or invalid {key}"})
         body = json.loads(request.content)
+        self._bodies.append(body)
         return httpx.Response(
             200,
             json={

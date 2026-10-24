@@ -1,7 +1,7 @@
 # TypeScript: Guide
 
 `langchain-s1` on npm is the TypeScript twin of the Python package: the same
-primitives, the same System One contract
+primitives will speak the same System One contract
 (`{model, state, questions}` → `{model, answers, usage}`), so anything written here
 translates directly to the [Python guide](../python/getting-started.md).
 

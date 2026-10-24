@@ -358,6 +358,25 @@ def test_url_credentials_redacted_from_messages_and_repr():
     assert "hunter2" not in str(e.value) and "sk-leak" not in str(e.value)
 
 
+def test_transport_error_text_is_redacted():
+    proxy = "http://user:hunter2@proxy.example:8080"
+    t = flaky(10, httpx.ProxyError(f"proxy connection failed for {proxy}"))
+    c = S1Client("m", transport=t, max_retries=0)
+    with pytest.raises(S1RequestError) as e:
+        c.decide("s", QUESTIONS)
+    assert "hunter2" not in str(e.value)
+    assert "http://proxy.example:8080" in str(e.value)
+
+    def echo(request):
+        raise httpx.TransportError(f"internal detail {proxy} leaked")
+
+    c = S1Client("m", transport=httpx.MockTransport(echo), max_retries=0)
+    with pytest.raises(S1RequestError) as e:
+        c.decide("s", QUESTIONS)
+    assert "hunter2" not in str(e.value)
+    assert "http://proxy.example:8080" in str(e.value)
+
+
 def test_large_error_body_truncated():
     t = raw_transport(lambda req, n: httpx.Response(400, text="E" * 100_000))
     with pytest.raises(S1APIError) as e:

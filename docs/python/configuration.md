@@ -6,20 +6,13 @@ changes.
 
 ## `S1Client` options
 
-| Option | Default | Description |
-|---|---|---|
-| `model` | *(required)* | Model identifier sent with every request. Not restricted. |
-| `base_url` | `https://api.typesafe.ai/v1` | API root; `/systemone` is appended. |
-| `endpoint_url` | `None` | Full endpoint URL. Overrides `base_url` when set. |
-| `api_key` | `None` | Sent as `Authorization: Bearer …` when set. Omit for unauthenticated endpoints. |
-| `headers` | `{}` | Extra headers sent with every request (e.g. custom auth). |
-| `timeout` | `30.0` | Per-attempt timeout in seconds, or an `httpx.Timeout`. |
-| `max_retries` | `2` | Retries after the first attempt for connection errors, timeouts, and statuses 408/429/5xx. `0` disables retries. |
-| `retry_backoff` | `0.5` | Base delay in seconds for exponential backoff (`base * 2**attempt` with jitter). A `Retry-After` header is honored (capped at 60s). |
-| `transport` | `None` | Injected `httpx` transport for custom integrations or tests. A sync-only transport needs `async_transport` for async calls. |
-| `async_transport` | `None` | Injected async transport, if different from `transport`. |
+The full option list, with defaults, is the
+[`S1Client` entry in the API reference](api.md#langchain_s1.client.S1Client) —
+generated from the docstring, so it never drifts from the code. The three common
+setups, all configuration only:
 
 ```python
+import os
 from langchain_s1 import S1Client
 
 # Hosted, bearer auth, longer timeout.
@@ -85,10 +78,10 @@ immediately, before any request.
 
 ### Policy options
 
-| Policy | Options |
-|---|---|
-| `noul_policy(question, run_at=, skip_below=)` | `0 <= skip_below <= run_at <= 1`. `P(yes) >= run_at` runs, `P(yes) < skip_below` skips, else uncertain. |
-| `choice_policy(question, run=, skip=, min_confidence=0.0)` | `run`/`skip` are collections of choice names (disjoint). Low confidence or unlisted choices are uncertain. |
+`noul_policy(question, run_at=, skip_below=)` and
+`choice_policy(question, run=, skip=, min_confidence=0.0)` map an answer to run/skip.
+The exact threshold rules are in the
+[API reference](api.md#langchain_s1.gate.noul_policy).
 
 ## Environment variables
 

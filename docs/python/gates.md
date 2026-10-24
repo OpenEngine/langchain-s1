@@ -33,39 +33,21 @@ gated_reply.invoke({"last_message": "thanks!"})           # -> skipped, returns 
 
 ## The pieces
 
-```python
-s1_gate(
-    node,          # the existing runnable (or any callable) to gate
-    decision,      # an S1Decision — or any runnable returning an S1Result
-    *,
-    policy,        # S1Result -> "run" | "skip" | "uncertain"
-    skip_output,   # (input, outcome) -> output, when the node is skipped
-    on_uncertain="raise",   # what "uncertain" resolves to
-    on_error="raise",       # what an inference failure resolves to
-    name=None,              # run name for tracing
-)
-```
+The full `s1_gate(...)` signature, with defaults, is in
+[Configuration](configuration.md#s1_gate-options) and the
+[API reference](api.md#langchain_s1.gate.s1_gate).
 
 ### Policies
 
-A policy maps an `S1Result` to `"run"`, `"skip"`, or `"uncertain"` (or a `GateAction`).
-Two built-ins cover the common cases; any callable works.
+A policy maps an `S1Result` to `"run"`, `"skip"`, or `"uncertain"` (or a `GateAction`);
+any callable works. The two built-ins, with their exact threshold rules, are
+[`noul_policy`](api.md#langchain_s1.gate.noul_policy) and
+[`choice_policy`](api.md#langchain_s1.gate.choice_policy):
 
 ```python
-# noul: threshold band
 noul_policy("needs_reply", run_at=0.7, skip_below=0.3)
-# P(yes) >= 0.7  -> run
-# P(yes) <  0.3  -> skip
-# otherwise      -> uncertain
-
-# choice: which choices run, which skip
 choice_policy("route", run={"billing"}, skip={"general"}, min_confidence=0.6)
-# choice in run, confidence >= min_confidence -> run
-# choice in skip                              -> skip
-# anything else                               -> uncertain
-
-# your own
-policy = lambda r: "run" if r["urgency"].score >= 1.5 else "skip"
+policy = lambda r: "run" if r["urgency"].score >= 1.5 else "skip"   # your own
 ```
 
 ### `skip_output`
@@ -78,15 +60,10 @@ empty state update:
 skip_output=lambda state, outcome: {}
 ```
 
-The `outcome` is a `GateOutcome` describing *why* the node was skipped:
-
-| Field | Values |
-|---|---|
-| `action` | the resolved action: `"run"`, `"skip"`, or `"raise"` |
-| `reason` | `"policy"`, `"uncertain"`, or `"inference_error"` |
-| `decision` | the `S1Result` (`None` on inference failure) |
-| `policy_result` | the raw policy verdict, if one was reached |
-| `error` | the exception, when inference failed |
+The `outcome` is a `GateOutcome` describing *why* the node was skipped: `action`,
+`reason` (`"policy"`, `"uncertain"`, `"inference_error"`), `decision`, `policy_result`,
+and `error` — the fields are documented on the class in the
+[API reference](api.md#langchain_s1.gate.GateOutcome).
 
 ### Fallbacks: `on_uncertain` and `on_error`
 
